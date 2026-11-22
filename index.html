@@ -57,7 +57,7 @@ body {
 .half {
   flex: 1; min-height: 0; position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 5vw;
+  padding: 0 5vw 84px;
 }
 .half.top { background: var(--top-bg); transform: rotate(180deg); --glow: var(--glow-top); }
 .half.bottom { background: var(--bot-bg); --glow: var(--glow-bot); }
@@ -93,6 +93,28 @@ body {
 }
 .adj:active { transform: scale(.9); background: var(--btn-press); }
 .adj:disabled { opacity: .28; transform: none; cursor: default; }
+.pp { position: absolute; left: 3vw; right: 3vw; bottom: 8px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.pp-row { width: 100%; display: flex; align-items: center; gap: 8px; }
+.pp-label { min-width: 96px; text-align: center; font-size: 13px; font-weight: 700; letter-spacing: .06em; color: var(--text); opacity: .8; font-variant-numeric: tabular-nums; }
+.mini {
+  width: 46px; height: 46px; padding: 0; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--btn-bd); background: var(--btn-bg); color: var(--text);
+  font-size: 30px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.mini:active { background: var(--btn-press); }
+.mini:disabled { opacity: .28; }
+.orbs { flex: 1; min-width: 0; display: flex; justify-content: center; gap: 3px; }
+.orb {
+  flex: 1 1 0; min-width: 0; max-width: 30px; height: 38px; padding: 0; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid var(--btn-bd); background: rgba(0,0,0,.16);
+  transition: background .18s, box-shadow .18s, border-color .18s, transform .08s;
+}
+.orb.on {
+  border-color: var(--gold2);
+  background: radial-gradient(circle at 35% 30%, #fff6cf, #f3d98a 45%, #b8913a);
+  box-shadow: 0 0 10px rgba(243,217,138,.8);
+}
+.orb:active { transform: scale(.86); }
 .bar {
   position: relative; flex: none; height: 98px; z-index: 2;
   background: var(--bar-bg); color: var(--bar-text);
@@ -154,6 +176,7 @@ body {
     <button class="adj" data-p="0" data-d="-1" aria-label="减少">−</button>
     <div class="num" id="n0">20</div>
     <button class="adj" data-p="0" data-d="1" aria-label="增加">+</button>
+    <div class="pp" data-p="0"></div>
   </section>
 
   <div class="bar">
@@ -170,6 +193,7 @@ body {
     <button class="adj" data-p="1" data-d="-1" aria-label="减少">−</button>
     <div class="num" id="n1">20</div>
     <button class="adj" data-p="1" data-d="1" aria-label="增加">+</button>
+    <div class="pp" data-p="1"></div>
   </section>
 </div>
 
@@ -242,9 +266,54 @@ body {
     btns[i].addEventListener('click', function () { change(+this.dataset.p, +this.dataset.d); });
   }
   document.getElementById('reset').addEventListener('click', function () {
-    life = [START, START]; render(0); render(1); bump(0, 'up'); bump(1, 'up'); sfx.reset();
+    life = [START, START]; render(0); render(1); bump(0, 'up'); bump(1, 'up'); resetPP(); sfx.reset();
   });
   render(0); render(1);
+
+  /* ---------- 能量（PP） ---------- */
+  var EMAX = 10, EMIN = 0;
+  var pp = [{ max: 1, lit: 1 }, { max: 1, lit: 1 }];
+  var ppBox = document.querySelectorAll('.pp');
+  sfx.use = function () { tone(330, .1, 'triangle', .22, 200); buzz(10); };
+  sfx.refill = function () { tone(420, .1, 'triangle', .2, 760); buzz(8); };
+  function renderPP(p) {
+    var box = ppBox[p], st = pp[p], orbs = box.querySelector('.orbs'), els = orbs.children;
+    while (els.length > st.max) orbs.removeChild(orbs.lastChild);
+    while (els.length < st.max) {
+      var b = document.createElement('button');
+      b.className = 'orb'; b.dataset.i = els.length + 1; b.setAttribute('aria-label', '能量');
+      orbs.appendChild(b);
+    }
+    for (var i = 0; i < els.length; i++) els[i].classList.toggle('on', i < st.lit);
+    box.querySelector('.pp-label').textContent = '能量 ' + st.lit + ' / ' + st.max;
+    var m = box.querySelectorAll('.mini');
+    m[0].disabled = st.max <= EMIN; m[1].disabled = st.max >= EMAX;
+  }
+  function setupPP(p) {
+    var box = ppBox[p];
+    box.innerHTML = '<div class="pp-label"></div><div class="pp-row"><button class="mini" data-d="-1" aria-label="减少能量上限">−</button><div class="orbs"></div><button class="mini" data-d="1" aria-label="增加能量上限">+</button></div>';
+    box.addEventListener('click', function (e) {
+      var t = e.target.closest('button'); if (!t) return;
+      var st = pp[p];
+      if (t.classList.contains('orb')) {
+        var i = +t.dataset.i, before = st.lit;
+        st.lit = (i === st.lit) ? i - 1 : i;
+        (st.lit < before ? sfx.use : sfx.refill)();
+      } else {
+        var d = +t.dataset.d, nm = Math.min(EMAX, Math.max(EMIN, st.max + d));
+        if (nm === st.max) return;
+        st.max = nm;
+        st.lit = d > 0 ? Math.min(st.max, st.lit + 1) : Math.min(st.lit, st.max);
+        (d > 0 ? sfx.plus : sfx.minus)();
+      }
+      renderPP(p);
+    });
+    renderPP(p);
+  }
+  function resetPP() {
+    for (var p = 0; p < 2; p++) { pp[p] = { max: 1, lit: 1 }; renderPP(p); }
+  }
+  setupPP(0); setupPP(1);
 
   /* 音效开关 */
   var snd = document.getElementById('snd');
